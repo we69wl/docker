@@ -11,6 +11,8 @@ services:
       - ./nginx/www:/var/www:ro
       - ./nginx/sites:/etc/nginx/conf.d:ro
       - ./logs/nginx:/var/log/nginx
+      - ./certbot/www:/var/www/certbot:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
     restart: unless-stopped
     networks:
       - app-network
@@ -23,8 +25,24 @@ services:
     container_name: php-fpm
     restart: unless-stopped
     volumes:
-      - ./nginx/www:/var/www:ro
+      - ./nginx/www:/var/www
       - ./logs/php:/var/log/php
+    networks:
+      - app-network
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-db
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./mysql/data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - app-network
 
@@ -37,19 +55,20 @@ services:
     volumes:
       - ./python/credentials.json:/app/credentials.json:ro
       - ./logs/python:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - app-network
 
-  mysql:
-    image: mysql:8.0
-    container_name: mysql-db
-    restart: unless-stopped
-    env_file:
-      - .env
+  certbot:
+    image: certbot/certbot
     volumes:
-      - ./mysql/data:/var/lib/mysql
-    networks:
-      - app-network
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done"
 
 networks:
   app-network:

@@ -1,16 +1,24 @@
-# Сервисные папки
-mysql/data/
-postgres/data/
-logs/
-*.log
+# Проекты и сайты
+nginx/www/
 
 # Секреты и окружение
 .env
 .env.local
 *.env
-credentials.json
+python/.env
+python/credentials.json
 *.key
 *.pem
+certbot/conf/
+certbot/www/
+
+# Данные БД
+mysql/data/
+postgres/data/
+
+# Логи
+logs/
+*.log
 
 # Python
 python/__pycache__/
@@ -18,14 +26,10 @@ python/*.pyc
 python/.venv/
 python/venv/
 
-# PHP
-php/sessions/
-
 # IDE
 .vscode/
 .idea/
 *.swp
-*.swo
 
 # OS
 .DS_Store
