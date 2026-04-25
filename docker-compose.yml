@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  nginx:
+    build: ./nginx
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/www:/var/www:ro
+      - ./nginx/sites:/etc/nginx/conf.d:ro
+      - ./logs/nginx:/var/log/nginx
+    restart: unless-stopped
+    networks:
+      - app-network
+    depends_on:
+      - php
+      - python
+
+  php:
+    build: ./php
+    container_name: php-fpm
+    restart: unless-stopped
+    volumes:
+      - ./nginx/www:/var/www:ro
+      - ./logs/php:/var/log/php
+    networks:
+      - app-network
+
+  python:
+    build: ./python
+    container_name: sheets-backend
+    restart: unless-stopped
+    env_file:
+      - ./python/.env
+    volumes:
+      - ./python/credentials.json:/app/credentials.json:ro
+      - ./logs/python:/app/logs
+    networks:
+      - app-network
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql-db
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./mysql/data:/var/lib/mysql
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
