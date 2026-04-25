@@ -1,0 +1,35 @@
+# Сервисные папки
+mysql/data/
+postgres/data/
+logs/
+*.log
+
+# Секреты и окружение
+.env
+.env.local
+*.env
+credentials.json
+*.key
+*.pem
+
+# Python
+python/__pycache__/
+python/*.pyc
+python/.venv/
+python/venv/
+
+# PHP
+php/sessions/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
