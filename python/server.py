@@ -8,6 +8,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:8080",
         "https://localhost:8443",
+        "http://72.56.101.248:8080",
+        "https://72.56.101.248:8443",    # ← ДОБАВИТЬ
         "https://72.56.101.248:8443",
         "https://dev.savin-it.ru:8443",
         "*"
