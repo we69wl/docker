@@ -1,23 +1,49 @@
-from fastapi import FastAPI
+import os
+import time
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from dotenv import load_dotenv
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+load_dotenv()
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8080",
-        "https://localhost:8443",
-        "http://72.56.101.248:8080",
-        "https://72.56.101.248:8443",    # ← ДОБАВИТЬ
-        "https://72.56.101.248:8443",
-        "https://dev.savin-it.ru:8443",
-        "*"
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+SERVICE_ACCOUNT_FILE = 'credentials.json'
+
+def get_sheets_service():
+    creds = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES
+    )
+    return build('sheets', 'v4', credentials=creds)
+
+CACHE_TTL = 60 * 60 * 1000  # 1 час
+cache = {}
+
+def get_cached(key):
+    entry = cache.get(key)
+    if not entry:
+        return None
+    if time.time() * 1000 - entry['ts'] > CACHE_TTL:
+        del cache[key]
+        return None
+    return entry['data']
+
+def set_cached(key, data):
+    cache[key] = {'data': data, 'ts': time.time() * 1000}
 
 @app.get("/health")
 def health():
@@ -28,5 +54,50 @@ def root():
     return {"message": "Server is working"}
 
 @app.get("/api/sheet-data")
-def get_sheet_data():
-    return {"headers": ["Column1"], "data": [["test"]], "columnWidths": [100]}
+def get_sheet_data(
+    spreadsheetId: str = Query(...),
+    sheetName: str = Query(...)
+):
+    cache_key = f"{spreadsheetId}::{sheetName}"
+    cached = get_cached(cache_key)
+    if cached:
+        logger.info(f"Cache hit: {cache_key}")
+        return cached
+
+    try:
+        service = get_sheets_service()
+        values_res = service.spreadsheets().values().get(
+            spreadsheetId=spreadsheetId,
+            range=f"'{sheetName}'"
+        ).execute()
+
+        meta_res = service.spreadsheets().get(
+            spreadsheetId=spreadsheetId,
+            fields="sheets(properties(title),data(columnMetadata(pixelSize)))"
+        ).execute()
+
+        sheet_meta = None
+        for sheet in meta_res.get('sheets', []):
+            if sheet.get('properties', {}).get('title') == sheetName:
+                sheet_meta = sheet
+                break
+
+        col_meta = sheet_meta.get('data', [{}])[0].get('columnMetadata', []) if sheet_meta else []
+        column_widths = [col.get('pixelSize', 100) for col in col_meta]
+
+        rows = values_res.get('values', [])
+        headers = rows[0] if rows else []
+        data = rows[1:] if rows else []
+
+        result = {
+            "headers": headers,
+            "data": data,
+            "columnWidths": column_widths
+        }
+        set_cached(cache_key, result)
+        logger.info(f"Fresh data: {cache_key}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error {cache_key}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
