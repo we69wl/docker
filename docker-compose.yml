@@ -11,9 +11,9 @@ services:
       - ./nginx/www:/var/www:ro
       - ./nginx/sites:/etc/nginx/conf.d:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro          # самоподписка
-      - ./certbot/conf:/etc/letsencrypt:ro     # ← ДОБАВИТЬ
-      - ./certbot/www:/var/www/certbot:ro      # ← ДОБАВИТЬ
       - ./logs/nginx:/var/log/nginx
+      # - ./certbot/conf:/etc/letsencrypt:ro     # ← ДОБАВИТЬ
+      # - ./certbot/www:/var/www/certbot:ro      # ← ДОБАВИТЬ
       # - ./certbot/www:/var/www/certbot:ro
       # - ./certbot/conf:/etc/letsencrypt:ro
     restart: unless-stopped
