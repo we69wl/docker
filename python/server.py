@@ -66,24 +66,37 @@ def get_sheet_data(
 
     try:
         service = get_sheets_service()
+        
+        # Fetch cell values
         values_res = service.spreadsheets().values().get(
             spreadsheetId=spreadsheetId,
             range=f"'{sheetName}'"
         ).execute()
 
+        # Fetch metadata (column AND row sizes)
         meta_res = service.spreadsheets().get(
             spreadsheetId=spreadsheetId,
-            fields="sheets(properties(title),data(columnMetadata(pixelSize)))"
+            fields="sheets(properties(title),data(columnMetadata(pixelSize),rowMetadata(pixelSize)))"
         ).execute()
 
+        # Find the sheet
         sheet_meta = None
         for sheet in meta_res.get('sheets', []):
             if sheet.get('properties', {}).get('title') == sheetName:
                 sheet_meta = sheet
                 break
 
+        # Extract column widths
         col_meta = sheet_meta.get('data', [{}])[0].get('columnMetadata', []) if sheet_meta else []
         column_widths = [col.get('pixelSize', 100) for col in col_meta]
+
+        # Extract row heights (skip header row at index 0)
+        row_meta = sheet_meta.get('data', [{}])[0].get('rowMetadata', []) if sheet_meta else []
+        row_heights = {}
+        for idx, row in enumerate(row_meta):
+            pixel_size = row.get('pixelSize')
+            if pixel_size and idx >= 1:  # Skip header row (idx 0)
+                row_heights[idx - 1] = pixel_size  # Shift index for data rows
 
         rows = values_res.get('values', [])
         headers = rows[0] if rows else []
@@ -92,7 +105,8 @@ def get_sheet_data(
         result = {
             "headers": headers,
             "data": data,
-            "columnWidths": column_widths
+            "columnWidths": column_widths,
+            "rowHeights": row_heights
         }
         set_cached(cache_key, result)
         logger.info(f"Fresh data: {cache_key}")
