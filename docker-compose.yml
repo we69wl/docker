@@ -12,6 +12,7 @@ services:
       # - ./certbot/conf:/etc/letsencrypt:ro
       # - ./certbot/www:/var/www/certbot:ro
       - ./logs/nginx:/var/log/nginx
+      - nginx-cache:/var/cache/nginx   # новая строка для кэша
     restart: unless-stopped
     networks:
       - app-network
@@ -72,3 +73,6 @@ services:
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  nginx-cache:
