@@ -9,8 +9,6 @@ python/.env
 python/credentials.json
 *.key
 *.pem
-certbot/conf/
-certbot/www/
 
 # Данные БД
 mysql/data/
