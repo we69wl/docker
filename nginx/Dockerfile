@@ -2,6 +2,9 @@ FROM nginx:alpine
 
 RUN rm /etc/nginx/conf.d/default.conf
 
+# Создаём папку для Certbot
+RUN mkdir -p /var/www/certbot
+
 COPY nginx.conf /etc/nginx/nginx.conf
 
 # Убираем COPY sites — конфиги будут монтироваться через volume
