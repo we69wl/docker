@@ -10,7 +10,7 @@ services:
       - ./nginx/sites:/etc/nginx/conf.d:ro
       - ./nginx/ssl:/etc/nginx/ssl:ro
       - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
+      - ./certbot/www:/var/www/certbot:ro
       - ./logs/nginx:/var/log/nginx
       - nginx-cache:/var/cache/nginx   # новая строка для кэша
     restart: unless-stopped
