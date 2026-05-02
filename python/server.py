@@ -16,8 +16,8 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=["https://dev6.savin-it.ru", "https://dev.savin-it.ru"],
+    allow_methods=["GET"],
     allow_headers=["*"],
 )
 
@@ -33,6 +33,8 @@ def get_sheets_service():
 CACHE_TTL = 60 * 60 * 1000  # 1 час
 cache = {}
 
+MAX_CACHE_SIZE = 100  # максимум ключей
+
 def get_cached(key):
     entry = cache.get(key)
     if not entry:
@@ -43,6 +45,9 @@ def get_cached(key):
     return entry['data']
 
 def set_cached(key, data):
+    if len(cache) >= MAX_CACHE_SIZE:
+        oldest = min(cache, key=lambda k: cache[k]['ts'])
+        del cache[oldest]
     cache[key] = {'data': data, 'ts': time.time() * 1000}
 
 @app.get("/health")
