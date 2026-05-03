@@ -44,7 +44,7 @@ ssl:
 		-w /var/www/certbot \
 		-d savin-it.ru -d www.savin-it.ru \
 		-d dev.savin-it.ru \
-		--email vladimir.sjj@gmail.com \
+		--email naxi03@mail.ru \
 		--agree-tos --no-eff-email
 
 shell-mysql:

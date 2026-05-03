@@ -1,87 +1,68 @@
 #!/bin/bash
+# /home/webowl/docker/scripts/backup.sh
 
-# Backup script for Docker infrastructure
-# Usage: ./scripts/backup.sh
+# Настройки
+BACKUP_ROOT="/mnt/backup/docker"
+SOURCE_DIR="/home/webowl/docker"
+DATE=$(date +%Y%m%d_%H%M)
+LOG_FILE="/home/webowl/docker/logs/backup.log"
 
-set -e
+# Убедимся, что папка существует
+mkdir -p "$BACKUP_ROOT"/{mysql,certbot,env,configs}
 
-# Цвета для вывода
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+echo "=========================================" >> $LOG_FILE
+echo "Backup started at $(date)" >> $LOG_FILE
 
-# Конфигурация
-BACKUP_DIR="/opt/backups"
-DATE=$(date +%Y%m%d_%H%M%S)
-RETENTION_DAYS=30
-DOCKER_DIR="/opt/docker"
-LOG_FILE="/opt/backups/backup_${DATE}.log"
-
-# Создаём папку для бэкапов
-mkdir -p "$BACKUP_DIR"
-
-# Функция логирования
-log() {
-    echo -e "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
-}
-
-# Функция проверки ошибок
-check_error() {
-    if [ $? -ne 0 ]; then
-        log "${RED}❌ Ошибка: $1${NC}"
-        exit 1
+# 1. Бэкап MySQL (только если контейнер запущен)
+if docker ps --format '{{.Names}}' | grep -q mysql-db; then
+    # Загрузить пароль из .env
+    if [ -f "$SOURCE_DIR/.env" ]; then
+        source "$SOURCE_DIR/.env"
+        if [ ! -z "$MYSQL_ROOT_PASSWORD" ]; then
+            docker exec mysql-db mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" --all-databases 2>/dev/null | \
+                gzip > "$BACKUP_ROOT/mysql/mysql_$DATE.sql.gz"
+            echo "✓ MySQL dump created" >> $LOG_FILE
+        else
+            echo "⚠ MYSQL_ROOT_PASSWORD not set in .env" >> $LOG_FILE
+        fi
+    else
+        echo "⚠ .env file not found, skipping MySQL backup" >> $LOG_FILE
     fi
-}
-
-log "${GREEN}🚀 Начинаем резервное копирование...${NC}"
-
-# 1. Бэкап баз данных (если есть MySQL)
-if docker ps | grep -q mysql-db; then
-    log "📦 Бэкапим MySQL..."
-    
-    mkdir -p "$BACKUP_DIR/mysql"
-    
-    docker exec mysql-db mysqldump \
-        --all-databases \
-        --single-transaction \
-        --quick \
-        --skip-lock-tables \
-        > "$BACKUP_DIR/mysql/all_databases_${DATE}.sql" 2>> "$LOG_FILE"
-    
-    check_error "MySQL дамп не создан"
-    log "${GREEN}✅ MySQL бэкап создан: $BACKUP_DIR/mysql/all_databases_${DATE}.sql${NC}"
+else
+    echo "⚠ MySQL container not running, skipping" >> $LOG_FILE
 fi
 
-# 2. Бэкап важных конфигов
-log "📁 Бэкапим конфигурационные файлы..."
-
-BACKUP_CONFIG_DIR="$BACKUP_DIR/config_${DATE}"
-mkdir -p "$BACKUP_CONFIG_DIR"
-
-# Копируем конфиги
-cp -r "$DOCKER_DIR"/nginx/sites "$BACKUP_CONFIG_DIR/" 2>> "$LOG_FILE"
-cp "$DOCKER_DIR"/nginx/nginx.conf "$BACKUP_CONFIG_DIR/" 2>> "$LOG_FILE"
-cp "$DOCKER_DIR"/docker-compose.yml "$BACKUP_CONFIG_DIR/" 2>> "$LOG_FILE"
-cp "$DOCKER_DIR"/.env "$BACKUP_CONFIG_DIR/" 2>> "$LOG_FILE" || log "${YELLOW}⚠️ .env не найден${NC}"
-cp "$DOCKER_DIR"/python/.env "$BACKUP_CONFIG_DIR/python.env" 2>> "$LOG_FILE" || log "${YELLOW}⚠️ python/.env не найден${NC}"
-
-log "${GREEN}✅ Конфиги сохранены в $BACKUP_CONFIG_DIR${NC}"
-
-# 3. Удаляем старые бэкапы (старше RETENTION_DAYS)
-log "🗑️ Удаляем бэкапы старше $RETENTION_DAYS дней..."
-find "$BACKUP_DIR" -type f -name "*.sql" -mtime +$RETENTION_DAYS -delete 2>> "$LOG_FILE"
-find "$BACKUP_DIR" -type d -name "config_*" -mtime +$RETENTION_DAYS -exec rm -rf {} \; 2>> "$LOG_FILE"
-
-# 4. Архивируем всё (опционально)
-if [ -f "$BACKUP_CONFIG_DIR/docker-compose.yml" ]; then
-    BACKUP_ARCHIVE="$BACKUP_DIR/backup_${DATE}.tar.gz"
-    tar -czf "$BACKUP_ARCHIVE" -C "$BACKUP_DIR" "config_${DATE}" "mysql" 2>> "$LOG_FILE"
-    log "${GREEN}📦 Архив создан: $BACKUP_ARCHIVE${NC}"
+# 2. Бэкап сертификатов
+if [ -d "$SOURCE_DIR/certbot/conf" ]; then
+    tar -czf "$BACKUP_ROOT/certbot/certbot_$DATE.tar.gz" \
+        -C "$SOURCE_DIR" certbot/conf 2>/dev/null
+    echo "✓ Certbot backup created" >> $LOG_FILE
 fi
 
-log "${GREEN}🎉 Резервное копирование завершено!${NC}"
-echo "-----------------------------------"
-echo "Backup directory: $BACKUP_DIR"
-echo "Log file: $LOG_FILE"
-echo "-----------------------------------"
+# 3. Бэкап .env и credentials.json
+[ -f "$SOURCE_DIR/.env" ] && cp "$SOURCE_DIR/.env" "$BACKUP_ROOT/env/env_$DATE"
+[ -f "$SOURCE_DIR/python/.env" ] && cp "$SOURCE_DIR/python/.env" "$BACKUP_ROOT/env/python_env_$DATE"
+[ -f "$SOURCE_DIR/python/credentials.json" ] && cp "$SOURCE_DIR/python/credentials.json" "$BACKUP_ROOT/env/credentials_$DATE.json"
+echo "✓ Env files backed up" >> $LOG_FILE
+
+# 4. Бэкап конфигов nginx
+if [ -d "$SOURCE_DIR/nginx/sites" ]; then
+    tar -czf "$BACKUP_ROOT/configs/nginx_sites_$DATE.tar.gz" \
+        -C "$SOURCE_DIR" nginx/sites 2>/dev/null
+    echo "✓ Nginx configs backed up" >> $LOG_FILE
+fi
+
+# 5. Бэкап docker-compose.yml
+if [ -f "$SOURCE_DIR/docker-compose.yml" ]; then
+    cp "$SOURCE_DIR/docker-compose.yml" "$BACKUP_ROOT/configs/docker-compose_$DATE.yml"
+    echo "✓ docker-compose.yml backed up" >> $LOG_FILE
+fi
+
+# 6. Очистка старых бэкапов (старше 30 дней)
+find "$BACKUP_ROOT/mysql" -name "*.sql.gz" -mtime +30 -delete 2>/dev/null
+find "$BACKUP_ROOT/certbot" -name "*.tar.gz" -mtime +30 -delete 2>/dev/null
+find "$BACKUP_ROOT/env" -type f -mtime +30 -delete 2>/dev/null
+find "$BACKUP_ROOT/configs" -type f -mtime +30 -delete 2>/dev/null
+
+echo "Backup completed at $(date)" >> $LOG_FILE
+echo "=========================================" >> $LOG_FILE
