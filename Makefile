@@ -21,9 +21,6 @@ shell-nginx:
 shell-python:
 	docker exec -it sheets-backend bash
 
-backup:
-	./scripts/backup.sh
-
 rotate-logs:
 	find ./logs -name "*.log" -size +100M -exec truncate -s 0 {} \;
 
