@@ -16,12 +16,12 @@ load_dotenv()
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://dev6.savin-it.ru", "https://dev.savin-it.ru",  "https://rufago.ru",         ],
-    allow_methods=["GET"],
-    allow_headers=["*"],
-)
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["https://dev6.savin-it.ru", "https://dev.savin-it.ru",  "https://rufago.ru",         ],
+#     allow_methods=["GET"],
+#     allow_headers=["*"],
+# )
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 SERVICE_ACCOUNT_FILE = 'credentials.json'
