@@ -3,7 +3,7 @@ import json
 import time
 import requests as req_lib
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
+# from fastapi.middleware.cors import CORSMiddleware
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from dotenv import load_dotenv
