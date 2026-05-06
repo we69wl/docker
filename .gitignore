@@ -9,6 +9,7 @@ python/.env
 python/credentials.json
 *.key
 *.pem
+*.crt
 
 # Данные БД
 mysql/data/
