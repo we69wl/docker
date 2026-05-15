@@ -3,13 +3,12 @@ import os
 import json
 from urllib.parse import quote
 import time
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests as req_lib
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 # from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -40,9 +39,8 @@ app = FastAPI(title="Table Widget API")
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 SERVICE_ACCOUNT_FILE = os.getenv("CREDENTIALS_FILE", 'credentials.json')
-API_TIMEOUT = int(os.getenv("API_TIMEOUT", "60"))
 
-# Row heights fetched only for first N rows — fetching all rows on 20k+ sheets causes 504s
+# Row heights fetched only for first N rows to avoid 504 timeouts on large sheets
 ROW_META_ROWS = int(os.getenv("ROW_META_ROWS", "50"))
 
 # XLSX export: skip per-cell formatting fetch for sheets larger than this many rows
@@ -81,136 +79,9 @@ def _with_retry(fn, max_retries=3):
     raise last_exc
 
 
-# ── In-memory cache ───────────────────────────────────────────────────────────
-
-CACHE_TTL_MS       = int(os.getenv("CACHE_TTL_MS",       str(6 * 60 * 60 * 1000)))  # default 6h
-CACHE_FRESH_MS     = int(os.getenv("CACHE_FRESH_MS",     str(5 * 60 * 60 * 1000)))  # default 5h
-ERROR_CACHE_TTL_MS = int(os.getenv("ERROR_CACHE_TTL_MS", str(5 * 60 * 1000)))       # default 5min
-MAX_CACHE_SIZE     = int(os.getenv("MAX_CACHE_SIZE",     "1000"))
-WARMUP_WORKERS     = int(os.getenv("WARMUP_WORKERS",     "10"))
-
-_cache: dict = {}
-_cache_lock = threading.Lock()
-_error_cache: dict = {}
-_error_cache_lock = threading.Lock()
-
-
-def get_cached(key: str):
-    with _cache_lock:
-        entry = _cache.get(key)
-        if entry is None:
-            return None
-        if time.time() * 1000 - entry["ts"] > CACHE_TTL_MS:
-            del _cache[key]
-            return None
-        return entry["data"]
-
-
-def set_cached(key: str, data: dict):
-    with _cache_lock:
-        if len(_cache) >= MAX_CACHE_SIZE:
-            oldest = min(_cache, key=lambda k: _cache[k]["ts"])
-            del _cache[oldest]
-        _cache[key] = {"data": data, "ts": time.time() * 1000}
-
-
-def get_cached_error(key: str):
-    with _error_cache_lock:
-        entry = _error_cache.get(key)
-        if entry is None:
-            return None
-        if time.time() * 1000 - entry["ts"] > ERROR_CACHE_TTL_MS:
-            del _error_cache[key]
-            return None
-        return entry
-
-
-def set_cached_error(key: str, status: int, detail: str):
-    with _error_cache_lock:
-        _error_cache[key] = {"status": status, "detail": detail, "ts": time.time() * 1000}
-
-
-def _is_error_cached(spreadsheetId: str, sheetName: str) -> bool:
-    return get_cached_error(f"{spreadsheetId}::{sheetName}") is not None
-
-
-# ── Warmup registry — survives server restarts ────────────────────────────────
-
-WARMUP_REGISTRY_FILE = os.getenv("WARMUP_REGISTRY_FILE", "warmup_registry.json")
-_registry: list = []
-_registry_lock = threading.Lock()
-
-
-def _load_registry():
-    global _registry
-    try:
-        with open(WARMUP_REGISTRY_FILE, "r", encoding="utf-8") as f:
-            _registry = json.load(f)
-        logger.info(f"Warmup registry loaded: {len(_registry)} sheet(s)")
-    except FileNotFoundError:
-        _registry = []
-    except Exception as e:
-        logger.warning(f"Failed to load warmup registry: {e}")
-        _registry = []
-
-
-def _save_registry():
-    try:
-        with open(WARMUP_REGISTRY_FILE, "w", encoding="utf-8") as f:
-            json.dump(_registry, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.warning(f"Failed to save warmup registry: {e}")
-
-
-def _update_registry(sheets: list):
-    with _registry_lock:
-        existing = {(s["spreadsheetId"], s["sheetName"]) for s in _registry}
-        added = 0
-        for s in sheets:
-            key = (s["spreadsheetId"], s["sheetName"])
-            if key not in existing:
-                _registry.append(s)
-                existing.add(key)
-                added += 1
-        if added:
-            _save_registry()
-            logger.info(f"Registry updated: +{added} sheet(s), total {len(_registry)}")
-
-
-_load_registry()
-
-
-@app.on_event("startup")
-def startup_warmup():
-    sheets = list(_registry)
-    if not sheets:
-        logger.info("[startup] Warmup registry is empty — skipping")
-        return
-
-    def _do():
-        time.sleep(3)
-        logger.info(f"[startup] Warming up {len(sheets)} sheet(s), workers={WARMUP_WORKERS}")
-        with ThreadPoolExecutor(max_workers=WARMUP_WORKERS) as pool:
-            future_to_sheet = {pool.submit(_warmup_if_needed, s, "startup"): s for s in sheets}
-            for fut in as_completed(future_to_sheet):
-                s = future_to_sheet[fut]
-                try:
-                    fut.result()
-                except Exception as e:
-                    logger.warning(f"[startup] {s['sheetName']}: {e}")
-        logger.info("[startup] Done")
-
-    threading.Thread(target=_do, daemon=True).start()
-
-
 # ── Error helpers ─────────────────────────────────────────────────────────────
 
 def _get_sheet_names(spreadsheetId: str) -> list:
-    cache_key = f"sheet_names::{spreadsheetId}"
-    cached = get_cached(cache_key)
-    if cached is not None:
-        return cached
-
     def do_get():
         svc = get_sheets_service()
         res = svc.spreadsheets().get(
@@ -218,10 +89,7 @@ def _get_sheet_names(spreadsheetId: str) -> list:
             fields="sheets(properties(title))",
         ).execute()
         return [s["properties"]["title"] for s in res.get("sheets", [])]
-
-    names = _with_retry(do_get)
-    set_cached(cache_key, names)
-    return names
+    return _with_retry(do_get)
 
 
 def _humanize_google_error(e: HttpError, sheet_name: str, spreadsheetId: str = "") -> str:
@@ -276,36 +144,20 @@ def get_sheet_data(
 ):
     spreadsheetId = spreadsheetId.strip()
     sheetName = sheetName.strip()
-    cache_key = f"{spreadsheetId}::{sheetName}"
-
-    cached = get_cached(cache_key)
-    if cached:
-        logger.info(f"Cache hit: {cache_key}")
-        return cached
-
-    cached_err = get_cached_error(cache_key)
-    if cached_err:
-        logger.info(f"Error cache hit: {cache_key}")
-        raise HTTPException(status_code=cached_err["status"], detail=cached_err["detail"])
-
     t_start = time.perf_counter()
 
     try:
         result = _fetch_all(spreadsheetId, sheetName)
-        set_cached(cache_key, result)
         logger.info(
-            f"Fresh: {sheetName} rows={len(result['data'])} "
+            f"Fetched: {sheetName} rows={len(result['data'])} "
             f"in {(time.perf_counter() - t_start) * 1000:.0f}ms"
         )
         return result
-
     except HttpError as e:
         status = int(e.resp.status)
         logger.error(f"[sheet-data] Google API {status}: {e}")
         http_status = status if status in (400, 403, 404) else 502
-        detail = _humanize_google_error(e, sheetName, spreadsheetId)
-        set_cached_error(cache_key, http_status, detail)
-        raise HTTPException(status_code=http_status, detail=detail)
+        raise HTTPException(status_code=http_status, detail=_humanize_google_error(e, sheetName, spreadsheetId))
     except Exception as e:
         logger.error(f"[sheet-data] {e}")
         raise HTTPException(status_code=500, detail=str(e) or "Не удалось загрузить данные.")
@@ -385,12 +237,6 @@ def _fetch_all(spreadsheetId: str, sheetName: str) -> dict:
 @app.get("/api/json-data")
 def get_json_data(url: str = Query(...)):
     url = url.strip()
-    cache_key = f"json::{url}"
-
-    cached = get_cached(cache_key)
-    if cached:
-        logger.info(f"Cache hit: {cache_key}")
-        return cached
 
     try:
         if url.startswith("/"):
@@ -410,185 +256,74 @@ def get_json_data(url: str = Query(...)):
         headers = list(json_array[0].keys())
         data = [[row.get(h, "") for h in headers] for row in json_array]
 
-        result = {"headers": headers, "data": data, "columnWidths": [], "rowHeights": {}}
-        set_cached(cache_key, result)
-        logger.info(f"Fresh JSON: {url}, rows: {len(data)}")
-        return result
+        logger.info(f"Fetched JSON: {url}, rows: {len(data)}")
+        return {"headers": headers, "data": data, "columnWidths": [], "rowHeights": {}}
 
     except HTTPException:
         raise
     except FileNotFoundError:
-        raise HTTPException(
-            status_code=404,
-            detail=f"File not found: {os.path.basename(url)}",
-        )
+        raise HTTPException(status_code=404, detail=f"File not found: {os.path.basename(url)}")
     except Exception as e:
         logger.error(f"[json-data] {e}")
         raise HTTPException(status_code=500, detail=str(e) or "Failed to load JSON")
 
 
-# ── Warmup helpers ────────────────────────────────────────────────────────────
-
-def _is_cache_fresh(spreadsheetId: str, sheetName: str) -> bool:
-    key = f"{spreadsheetId}::{sheetName}"
-    with _cache_lock:
-        entry = _cache.get(key)
-        if entry is None:
-            return False
-        return time.time() * 1000 - entry["ts"] < CACHE_FRESH_MS
-
-
-def _warmup_one(s: dict, tag: str):
-    sid, name = s["spreadsheetId"], s["sheetName"]
-    cache_key = f"{sid}::{name}"
-    try:
-        result = _fetch_all(sid, name)
-        set_cached(cache_key, result)
-        logger.info(f"[{tag}] OK: {name} rows={len(result['data'])}")
-    except HttpError as e:
-        status = int(e.resp.status)
-        http_status = status if status in (400, 403, 404) else 502
-        detail = _humanize_google_error(e, name, sid)
-        set_cached_error(cache_key, http_status, detail)
-        logger.warning(f"[{tag}] error cached ({http_status}): {name}")
-        raise
-
-
-def _warmup_if_needed(s: dict, tag: str) -> bool:
-    if _is_cache_fresh(s["spreadsheetId"], s["sheetName"]):
-        logger.info(f"[{tag}] skipped (fresh): {s['sheetName']}")
-        return False
-    if _is_error_cached(s["spreadsheetId"], s["sheetName"]):
-        logger.info(f"[{tag}] skipped (error cached): {s['sheetName']}")
-        return False
-    _warmup_one(s, tag)
-    return True
-
-
-# POST /api/warmup
-# Body: [{"spreadsheetId": "...", "sheetName": "..."}]
-# Pre-warms cache for a page's sheets. Runs in background — returns immediately.
-@app.post("/api/warmup")
-def warmup(sheets: list[dict]):
-    valid = [
-        {"spreadsheetId": s["spreadsheetId"].strip(), "sheetName": s["sheetName"].strip()}
-        for s in sheets
-        if (s.get("spreadsheetId") or "").strip() and (s.get("sheetName") or "").strip()
-    ]
-
-    def _do():
-        warmed = []
-        workers = min(WARMUP_WORKERS, len(valid)) if valid else 1
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            future_to_sheet = {pool.submit(_warmup_if_needed, s, "warmup"): s for s in valid}
-            for fut in as_completed(future_to_sheet):
-                s = future_to_sheet[fut]
-                try:
-                    if fut.result():
-                        warmed.append(s)
-                except Exception as e:
-                    logger.warning(f"[warmup] {s['sheetName']}: {e}")
-        if warmed:
-            _update_registry(warmed)
-
-    threading.Thread(target=_do, daemon=True).start()
-    return {"message": f"Warmup started for {len(valid)} sheet(s)"}
-
-
-# POST /api/warmup-all
-# Re-warms all registered sheets whose cache has gone stale.
-@app.post("/api/warmup-all")
-def warmup_all():
-    with _registry_lock:
-        sheets = list(_registry)
-
-    if not sheets:
-        return {"message": "Registry is empty — nothing to warm up"}
-
-    def _do():
-        logger.info(f"[warmup-all] Starting: {len(sheets)} sheet(s), workers={WARMUP_WORKERS}")
-        with ThreadPoolExecutor(max_workers=WARMUP_WORKERS) as pool:
-            future_to_sheet = {pool.submit(_warmup_if_needed, s, "warmup-all"): s for s in sheets}
-            for fut in as_completed(future_to_sheet):
-                s = future_to_sheet[fut]
-                try:
-                    fut.result()
-                except Exception as e:
-                    logger.warning(f"[warmup-all] {s['sheetName']}: {e}")
-        logger.info("[warmup-all] Done")
-
-    threading.Thread(target=_do, daemon=True).start()
-    return {"message": f"Warmup-all started for {len(sheets)} sheet(s)"}
-
-
-# GET /api/cache/stats
-@app.get("/api/cache/stats")
-def cache_stats():
-    now = time.time() * 1000
-    with _cache_lock:
-        data_entries = [
-            {"key": k, "age_s": round((now - v["ts"]) / 1000)}
-            for k, v in _cache.items()
-        ]
-    with _error_cache_lock:
-        error_entries = [
-            {"key": k, "status": v["status"], "age_s": round((now - v["ts"]) / 1000)}
-            for k, v in _error_cache.items()
-        ]
-    with _registry_lock:
-        registry_count = len(_registry)
-    return {
-        "data_cache": {"count": len(data_entries), "entries": data_entries},
-        "error_cache": {"count": len(error_entries), "entries": error_entries},
-        "registry": {"count": registry_count},
-    }
-
-
-# POST /api/cache/clear
-@app.post("/api/cache/clear")
-def clear_cache():
-    with _cache_lock:
-        count = len(_cache)
-        _cache.clear()
-    with _error_cache_lock:
-        err_count = len(_error_cache)
-        _error_cache.clear()
-    logger.info(f"Cache cleared ({count} data + {err_count} error entries)")
-    return {"message": f"Cache cleared ({count} data + {err_count} error entries)"}
-
-
 # POST /api/export
-# Body: { "spreadsheetId": "...", "sheetName": "..." }
-# Returns XLSX built from cached data (open the modal first to populate the cache).
+# Body: { "spreadsheetId": "...", "sheetName": "...", "jsonUrl": "..." }
+# Fetches data fresh and returns an XLSX file.
 
 class ExportRequest(BaseModel):
-    spreadsheetId: str
-    sheetName: str
+    spreadsheetId: Optional[str] = None
+    sheetName: Optional[str] = None
+    jsonUrl: Optional[str] = None
 
 
 @app.post("/api/export")
 def export_xlsx(req: ExportRequest):
-    sid = req.spreadsheetId.strip()
-    sname = req.sheetName.strip()
-    cache_key = f"{sid}::{sname}"
+    # ── Fetch data ────────────────────────────────────────────────────────────
+    if req.jsonUrl:
+        url = req.jsonUrl.strip()
+        try:
+            if url.startswith("/"):
+                file_name = os.path.basename(url)
+                file_path = os.path.join(os.getcwd(), "data", file_name)
+                with open(file_path, "r", encoding="utf-8") as f:
+                    json_array = json.load(f)
+            else:
+                response = req_lib.get(url, timeout=30)
+                if not response.ok:
+                    raise Exception(f"HTTP {response.status_code} fetching {url}")
+                json_array = response.json()
+            headers = list(json_array[0].keys()) if json_array else []
+            data = [[row.get(h, "") for h in headers] for row in json_array]
+            col_widths: list = []
+            row_heights: dict = {}
+            sname = os.path.splitext(os.path.basename(url))[0] or "export"
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e) or "Failed to load JSON")
 
-    cached = get_cached(cache_key)
-    if not cached:
-        raise HTTPException(
-            status_code=404,
-            detail="Данные не найдены в кэше. Сначала откройте таблицу в браузере.",
-        )
+    elif req.spreadsheetId and req.sheetName:
+        sid = req.spreadsheetId.strip()
+        sname = req.sheetName.strip()
+        try:
+            fetched = _fetch_all(sid, sname)
+        except HttpError as e:
+            status = int(e.resp.status)
+            http_status = status if status in (400, 403, 404) else 502
+            raise HTTPException(status_code=http_status, detail=_humanize_google_error(e, sname, sid))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        headers = fetched.get("headers") or []
+        data = fetched.get("data") or []
+        col_widths = fetched.get("columnWidths") or []
+        row_heights = fetched.get("rowHeights") or {}
+    else:
+        raise HTTPException(status_code=400, detail="Provide spreadsheetId+sheetName or jsonUrl")
 
-    headers = cached.get("headers") or []
-    data = cached.get("data") or []
-    cached_col_widths = cached.get("columnWidths") or []
-    cached_row_heights = cached.get("rowHeights") or {}
     num_rows = len(data) + 1  # including header row
 
-    # Skip per-cell formatting for large sheets — the includeGridData payload is
-    # enormous for 5k+ rows and will OOM or timeout the process.
-    use_fmt = num_rows <= EXPORT_FORMAT_MAX_ROWS
-
+    # ── Formatting (Google Sheets only, skipped for large sheets) ─────────────
+    use_fmt = bool(req.spreadsheetId) and num_rows <= EXPORT_FORMAT_MAX_ROWS
     fmt_row_data: list = []
     fmt_col_meta: list = []
     fmt_row_meta: list = []
@@ -598,7 +333,7 @@ def export_xlsx(req: ExportRequest):
         def do_get_format():
             svc = get_sheets_service()
             return svc.spreadsheets().get(
-                spreadsheetId=sid,
+                spreadsheetId=req.spreadsheetId.strip(),
                 ranges=[f"'{sname}'!1:{num_rows}"],
                 includeGridData=True,
                 fields=(
@@ -627,6 +362,8 @@ def export_xlsx(req: ExportRequest):
             logger.warning(f"[export] Formatting fetch failed ({e}) — using basic style")
             use_fmt = False
 
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
     def _rgb_hex(color: dict) -> str | None:
         if not color:
             return None
@@ -641,6 +378,7 @@ def export_xlsx(req: ExportRequest):
         "DOTTED": 4, "DASHED": 8, "DOUBLE": 6,
     }
 
+    # ── Build XLSX ────────────────────────────────────────────────────────────
     output = io.BytesIO()
     workbook_opts = {"in_memory": True} if use_fmt else {"constant_memory": True}
     workbook = xlsxwriter.Workbook(output, workbook_opts)
@@ -711,7 +449,7 @@ def export_xlsx(req: ExportRequest):
     # Column widths (pixels → Excel char units, ~7 px per char)
     for ci in range(len(headers)):
         px = (fmt_col_meta[ci].get("pixelSize") if ci < len(fmt_col_meta) else None) \
-            or (cached_col_widths[ci] if ci < len(cached_col_widths) else None)
+            or (col_widths[ci] if ci < len(col_widths) else None)
         if px:
             worksheet.set_column(ci, ci, min(px / 7, 80))
         else:
@@ -735,7 +473,7 @@ def export_xlsx(req: ExportRequest):
     for ri in range(num_rows):
         px_h = (fmt_row_meta[ri].get("pixelSize") if ri < len(fmt_row_meta) else None)
         if px_h is None and ri > 0:
-            px_h = cached_row_heights.get(ri - 1) or cached_row_heights.get(str(ri - 1))
+            px_h = row_heights.get(ri - 1) or row_heights.get(str(ri - 1))
         if px_h:
             worksheet.set_row(ri, px_h * 0.75)
 
