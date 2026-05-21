@@ -1,9 +1,11 @@
 import io
 import os
+import csv
 import json
 from urllib.parse import quote
 import time
 import requests as req_lib
+from googleapiclient.http import MediaIoBaseDownload
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 # from fastapi.middleware.cors import CORSMiddleware
@@ -37,7 +39,10 @@ app = FastAPI(title="Table Widget API")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+SCOPES = [
+    'https://www.googleapis.com/auth/spreadsheets.readonly',
+    'https://www.googleapis.com/auth/drive.readonly',
+]
 SERVICE_ACCOUNT_FILE = os.getenv("CREDENTIALS_FILE", 'credentials.json')
 
 # Row heights fetched only for first N rows to avoid 504 timeouts on large sheets
@@ -53,6 +58,13 @@ def get_sheets_service():
         SERVICE_ACCOUNT_FILE, scopes=SCOPES
     )
     return build('sheets', 'v4', credentials=creds)
+
+
+def get_drive_service():
+    creds = service_account.Credentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE, scopes=SCOPES
+    )
+    return build('drive', 'v3', credentials=creds)
 
 
 # ── Retry helper ──────────────────────────────────────────────────────────────
@@ -230,6 +242,75 @@ def _fetch_all(spreadsheetId: str, sheetName: str) -> dict:
     }
 
 
+def _fetch_csv_from_drive(file_id: str) -> dict:
+    def do_meta():
+        svc = get_drive_service()
+        return svc.files().get(fileId=file_id, fields="name").execute()
+
+    def do_download():
+        svc = get_drive_service()
+        buf = io.BytesIO()
+        downloader = MediaIoBaseDownload(buf, svc.files().get_media(fileId=file_id))
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        buf.seek(0)
+        return buf.getvalue()
+
+    meta = _with_retry(do_meta)
+    raw  = _with_retry(do_download)
+
+    if raw.startswith(b"\xef\xbb\xbf"):
+        raw = raw[3:]
+        encoding = "utf-8"
+    else:
+        try:
+            raw.decode("utf-8")
+            encoding = "utf-8"
+        except UnicodeDecodeError:
+            encoding = "cp1251"
+
+    text = raw.decode(encoding)
+    rows = [r for r in csv.reader(io.StringIO(text)) if any(c.strip() for c in r)]
+
+    file_name = meta.get("name", file_id)
+    headers   = rows[0] if rows else []
+    data      = rows[1:] if len(rows) > 1 else []
+    return {
+        "headers": headers,
+        "data": data,
+        "columnWidths": [],
+        "rowHeights": {},
+        "total": len(data),
+        "fileName": file_name,
+    }
+
+
+# GET /api/csv-data?fileId=...
+# Downloads a CSV file from Google Drive. Service account must have viewer access.
+@app.get("/api/csv-data")
+def get_csv_data(fileId: str = Query(...)):
+    fileId = fileId.strip()
+    try:
+        result = _fetch_csv_from_drive(fileId)
+        logger.info(f"Fetched CSV: {result.get('fileName')} rows={len(result['data'])}")
+        return result
+    except HttpError as e:
+        status = int(e.resp.status)
+        http_status = status if status in (403, 404) else 502
+        detail = (
+            "Нет доступа к файлу. Поделитесь им с сервисным аккаунтом."
+            if status == 403
+            else "Файл не найден. Проверьте ID файла."
+            if status == 404
+            else str(e) or "Не удалось загрузить файл."
+        )
+        raise HTTPException(status_code=http_status, detail=detail)
+    except Exception as e:
+        logger.error(f"[csv-data] {e}")
+        raise HTTPException(status_code=500, detail=str(e) or "Не удалось загрузить CSV файл.")
+
+
 # GET /api/json-data?url=...
 # Accepts an absolute URL (https://...) or a local path (/catalog.json).
 # Local paths are resolved to data/<filename> relative to cwd and read from disk.
@@ -276,12 +357,29 @@ class ExportRequest(BaseModel):
     spreadsheetId: Optional[str] = None
     sheetName: Optional[str] = None
     jsonUrl: Optional[str] = None
+    csvFileId: Optional[str] = None
 
 
 @app.post("/api/export")
 def export_xlsx(req: ExportRequest):
     # ── Fetch data ────────────────────────────────────────────────────────────
-    if req.jsonUrl:
+    if req.csvFileId:
+        file_id = req.csvFileId.strip()
+        try:
+            fetched = _fetch_csv_from_drive(file_id)
+        except HttpError as e:
+            status = int(e.resp.status)
+            http_status = status if status in (403, 404) else 502
+            raise HTTPException(status_code=http_status, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+        headers     = fetched.get("headers") or []
+        data        = fetched.get("data") or []
+        col_widths: list = []
+        row_heights: dict = {}
+        sname = os.path.splitext(fetched.get("fileName", file_id))[0]
+
+    elif req.jsonUrl:
         url = req.jsonUrl.strip()
         try:
             if url.startswith("/"):
