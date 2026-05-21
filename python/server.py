@@ -358,6 +358,7 @@ class ExportRequest(BaseModel):
     sheetName: Optional[str] = None
     jsonUrl: Optional[str] = None
     csvFileId: Optional[str] = None
+    format: Optional[str] = "xlsx"
 
 
 @app.post("/api/export")
@@ -419,6 +420,22 @@ def export_xlsx(req: ExportRequest):
         raise HTTPException(status_code=400, detail="Provide spreadsheetId+sheetName or jsonUrl")
 
     num_rows = len(data) + 1  # including header row
+
+    # ── CSV export ────────────────────────────────────────────────────────────
+    if req.format == "csv":
+        buf = io.StringIO()
+        writer = csv.writer(buf, quoting=csv.QUOTE_MINIMAL)
+        writer.writerow(headers)
+        writer.writerows(data)
+        csv_bytes = ("﻿" + buf.getvalue()).encode("utf-8")
+        fn = f"{sname}.csv"
+        encoded_fn = quote(fn)
+        safe_fn = sname.encode("ascii", "replace").decode().replace("?", "_") + ".csv"
+        return StreamingResponse(
+            io.BytesIO(csv_bytes),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f"attachment; filename=\"{safe_fn}\"; filename*=UTF-8''{encoded_fn}"},
+        )
 
     # ── Formatting (Google Sheets only, skipped for large sheets) ─────────────
     use_fmt = bool(req.spreadsheetId) and num_rows <= EXPORT_FORMAT_MAX_ROWS
