@@ -51,3 +51,10 @@ backup:
 	./scripts/backup.sh
 
 .DEFAULT_GOAL := up
+
+collect-licenses:
+	@bash scripts/collect-licenses/accumulate.sh
+
+pswd:
+	@bash scripts/pass/generate.sh
+	
