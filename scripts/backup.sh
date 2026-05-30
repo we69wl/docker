@@ -64,5 +64,12 @@ find "$BACKUP_ROOT/certbot" -name "*.tar.gz" -mtime +30 -delete 2>/dev/null
 find "$BACKUP_ROOT/env" -type f -mtime +30 -delete 2>/dev/null
 find "$BACKUP_ROOT/configs" -type f -mtime +30 -delete 2>/dev/null
 
+# 7. Бэкап папки passwords
+cp -r /mnt/toshiba/common/passwords /mnt/toshiba/common/.passwords_backup_$DATE && \
+    echo "✓ Passwords backup created" >> $LOG_FILE || \
+    echo "⚠ Passwords backup failed" >> $LOG_FILE
+# Очистка старых бэкапов passwords (старше 30 дней)
+find /mnt/toshiba/common -maxdepth 1 -name ".passwords_backup_*" -mtime +30 -exec rm -rf {} \;
+
 echo "Backup completed at $(date)" >> $LOG_FILE
 echo "=========================================" >> $LOG_FILE
