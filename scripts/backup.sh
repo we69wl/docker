@@ -2,7 +2,7 @@
 # /home/webowl/docker/scripts/backup.sh
 
 # Настройки
-BACKUP_ROOT="/mnt/backup/docker"
+BACKUP_ROOT="/mnt/toshiba/docker"
 SOURCE_DIR="/home/webowl/docker"
 DATE=$(date +%Y%m%d_%H%M)
 LOG_FILE="/home/webowl/docker/logs/backup.log"
