@@ -14,23 +14,23 @@ echo "=========================================" >> $LOG_FILE
 echo "Backup started at $(date)" >> $LOG_FILE
 
 # 1. Бэкап MySQL (только если контейнер запущен)
-if docker ps --format '{{.Names}}' | grep -q mysql-db; then
-    # Загрузить пароль из .env
-    if [ -f "$SOURCE_DIR/.env" ]; then
-        source "$SOURCE_DIR/.env"
-        if [ ! -z "$MYSQL_ROOT_PASSWORD" ]; then
-            docker exec mysql-db mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" --all-databases 2>/dev/null | \
-                gzip > "$BACKUP_ROOT/mysql/mysql_$DATE.sql.gz"
-            echo "✓ MySQL dump created" >> $LOG_FILE
-        else
-            echo "⚠ MYSQL_ROOT_PASSWORD not set in .env" >> $LOG_FILE
-        fi
-    else
-        echo "⚠ .env file not found, skipping MySQL backup" >> $LOG_FILE
-    fi
-else
-    echo "⚠ MySQL container not running, skipping" >> $LOG_FILE
-fi
+# if docker ps --format '{{.Names}}' | grep -q mysql-db; then
+#     # Загрузить пароль из .env
+#     if [ -f "$SOURCE_DIR/.env" ]; then
+#         source "$SOURCE_DIR/.env"
+#         if [ ! -z "$MYSQL_ROOT_PASSWORD" ]; then
+#             docker exec mysql-db mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" --all-databases 2>/dev/null | \
+#                 gzip > "$BACKUP_ROOT/mysql/mysql_$DATE.sql.gz"
+#             echo "✓ MySQL dump created" >> $LOG_FILE
+#         else
+#             echo "⚠ MYSQL_ROOT_PASSWORD not set in .env" >> $LOG_FILE
+#         fi
+#     else
+#         echo "⚠ .env file not found, skipping MySQL backup" >> $LOG_FILE
+#     fi
+# else
+#     echo "⚠ MySQL container not running, skipping" >> $LOG_FILE
+# fi
 
 # 2. Бэкап сертификатов
 if [ -d "$SOURCE_DIR/certbot/conf" ]; then
