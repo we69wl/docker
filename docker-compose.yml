@@ -19,6 +19,7 @@ services:
     depends_on:
       - php
       - python
+      - node-qzzdeals
 
   php:
     build: ./php
@@ -45,6 +46,20 @@ services:
       retries: 5
     networks:
       - app-network
+
+  node-qzzdeals:
+    build:
+      context: .
+      dockerfile: node/Dockerfile
+    container_name: node-qzzdeals
+    restart: unless-stopped
+    env_file:
+      - ./nginx/www/qzzdeals/backend/.env
+    networks:
+      - app-network
+    depends_on:
+      mysql:
+        condition: service_healthy
 
   python:
     build: ./python
