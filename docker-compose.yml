@@ -19,7 +19,7 @@ services:
     depends_on:
       - php
       - python
-      - node-qzzdeals
+      - node-qzz
 
   php:
     build: ./php
@@ -47,11 +47,11 @@ services:
     networks:
       - app-network
 
-  node-qzzdeals:
+  node-qzz:
     build:
       context: .
       dockerfile: node/Dockerfile
-    container_name: node-qzzdeals
+    container_name: node-qzz
     restart: unless-stopped
     env_file:
       - ./nginx/www/qzzdeals/backend/.env
