@@ -6,7 +6,7 @@
 #  Использование: fix_algif
 # ============================================================
 
-PC_DB_ENC="${HOME}/.config/pc/computers.csv.gpg"
+PC_DB_ENC="${HOME}/.config/pc/computers.tsv.gpg"
 
 # Логин локального админа — поменяй на свой
 ADMIN_USER="administrator"
@@ -17,7 +17,7 @@ SSH_TIMEOUT=5
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
 
-LOG_FILE="${HOME}/.config/pc/fix_algif_$(date '+%Y-%m-%d_%H-%M').log"
+LOG_FILE="${HOME}/.config/pc/logs/fix_algif_$(date '+%Y-%m-%d_%H-%M').log"
 
 # ---------- команды которые нужно выполнить на каждой машине ----------
 REMOTE_CMD='
@@ -72,8 +72,8 @@ fi
 
 # ---------- расшифровываем базу ----------
 echo -e "${CYAN}Расшифровываем базу pc...${RESET}"
-CSV_DATA=$(gpg --decrypt "$PC_DB_ENC" 2>/dev/null)
-if [[ $? -ne 0 ]] || [[ -z "$CSV_DATA" ]]; then
+TSV_DATA=$(gpg --decrypt "$PC_DB_ENC" 2>/dev/null)
+if [[ $? -ne 0 ]] || [[ -z "$TSV_DATA" ]]; then
   echo -e "${RED}Ошибка расшифровки. Неверный мастер-пароль?${RESET}"
   exit 1
 fi
@@ -99,19 +99,19 @@ echo -e "  ───────────────────────
 SSH_OPTS=(
   -o "StrictHostKeyChecking=no"
   -o "ConnectTimeout=${SSH_TIMEOUT}"
-  -o "BatchMode=no"
-  -o "LogLevel=ERROR"
+  -o BatchMode=no
+  -o LogLevel=ERROR
 )
 
 # ---------- основной цикл ----------
-while IFS=',' read -r employee ip password; do
+while IFS=$'\t' read -r employee ip password type; do
   # Пропускаем заголовок и пустые строки
   [[ "$employee" == "employee" ]] && continue
   [[ -z "$ip" ]] && continue
-
-  employee=$(echo "$employee" | xargs)
-  ip=$(echo "$ip" | xargs)
-  password=$(echo "$password" | xargs)
+  [[ "$type" != "pc" ]] && continue
+  employee=$(echo "$employee")
+  ip=$(echo "$ip")
+  password=$(echo "$password")
 
   (( total++ ))
 
@@ -126,27 +126,25 @@ while IFS=',' read -r employee ip password; do
 
   # Функция выполнения команды
   _run_remote() {
-    local use_pass="$1"
-    if [[ "$use_pass" == "true" ]] && [[ "$HAS_SSHPASS" == "true" ]]; then
+    local stdin_data
+    stdin_data="$password
+  $REMOTE_CMD"
+
+    if [[ "$HAS_SSHPASS" == "true" ]]; then
+        # "echo '$password' | sudo -S bash -c '$REMOTE_CMD'" < /dev/null
       sshpass -p "$password" ssh "${SSH_OPTS[@]}" \
         "${ADMIN_USER}@${ip}" \
-        "echo '$password' | sudo -S bash -c '$REMOTE_CMD'" 2>/dev/null
+        "/usr/bin/sudo -S /bin/bash -s" <<< "$stdin_data"
     else
       ssh "${SSH_OPTS[@]}" \
         "${ADMIN_USER}@${ip}" \
-        "sudo bash -c '$REMOTE_CMD'" 2>/dev/null
+        "/usr/bin/sudo /bin/bash -s" <<< "$REMOTE_CMD" 2>/dev/null
     fi
   }
 
   printf "  %-25s %-18s " "$employee" "$ip"
 
-  # Сначала пробуем без пароля (вдруг sudo NOPASSWD)
-  result=$(_run_remote false)
-
-  # Если не получилось и есть sshpass — пробуем с паролем
-  if [[ "$result" != "OK" ]] && [[ "$HAS_SSHPASS" == "true" ]]; then
-    result=$(_run_remote true)
-  fi
+  result=$(_run_remote true)
 
   if [[ "$result" == "OK" ]]; then
     echo -e "${GREEN}● готово${RESET}"
@@ -162,7 +160,7 @@ while IFS=',' read -r employee ip password; do
     (( failed++ ))
   fi
 
-done <<< "$(echo "$CSV_DATA" | grep -v '^\s*$')"
+done <<< "$(echo "$TSV_DATA" | grep -v '^\s*$')"
 
 # ---------- итог ----------
 echo -e "  ──────────────────────────────────────────────────────"

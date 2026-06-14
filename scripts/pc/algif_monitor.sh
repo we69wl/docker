@@ -9,7 +9,7 @@
 #    algif_monitor --status  — показать текущий статус
 # ============================================================
 
-PC_DB_ENC="${HOME}/.config/pc/computers.csv.gpg"
+PC_DB_ENC="${HOME}/.config/pc/computers.tsv.gpg"
 ADMIN_USER="administrator"
 SSH_TIMEOUT=5
 PING_INTERVAL=60   # проверять каждые N секунд

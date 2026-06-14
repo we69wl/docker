@@ -1,11 +1,10 @@
 #!/bin/bash
-
 LOG="logs/licenses_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee "$LOG") 2>&1
 
 SUBNETS="192.168.111.0/24 192.168.121.0/24"
 SSH_USER="vlaysavin"
-SSH_PASS="q2Wc38qwjDC6gxE@#@"
+SSH_PASS=$(cat ~/.ssh/.vault)
 SSH_OPTS="-o ConnectTimeout=3 -o StrictHostKeyChecking=no"
 
 ASTRA_COUNT=0
