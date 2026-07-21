@@ -87,6 +87,10 @@ services:
     networks:
       - app-network   # ← добавить сеть
 
+  markitdown-mcp:
+    build: ./services/markitdown/packages/markitdown-mcp
+    image: markitdown-mcp:latest
+
 networks:
   app-network:
     driver: bridge
