@@ -87,9 +87,9 @@ services:
     networks:
       - app-network   # ← добавить сеть
 
-  markitdown-mcp:
-    build: ./services/markitdown/packages/markitdown-mcp
-    image: markitdown-mcp:latest
+  markitdown:
+    build: ./services/markitdown
+    image: markitdown:latest
 
 networks:
   app-network:
