@@ -7,21 +7,18 @@
 #  Использование:
 #    algif_monitor           — запустить мониторинг
 #    algif_monitor --status  — показать текущий статус
+#    algif_monitor --stop    — остановить мониторинг
 # ============================================================
 
-PC_DB_ENC="${HOME}/.config/pc/computers.tsv.gpg"
-ADMIN_USER="administrator"
-SSH_TIMEOUT=5
-PING_INTERVAL=60   # проверять каждые N секунд
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+
+PING_INTERVAL=60
 
 LOG_DIR="${HOME}/.config/pc/algif"
 DONE_LOG="${LOG_DIR}/done.log"
 PENDING_LOG="${LOG_DIR}/pending.log"
-MONITOR_LOG="${LOG_DIR}/monitor.log"
+LOG_FILE="${LOG_DIR}/monitor.log"   # используется функцией log() из common.sh
 PID_FILE="${LOG_DIR}/monitor.pid"
-
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
 
 REMOTE_CMD='
 set -e
@@ -35,61 +32,22 @@ else
 fi
 '
 
-HAS_SSHPASS=false
-command -v sshpass &>/dev/null && HAS_SSHPASS=true
-
-# ---------- инициализация ----------
 _init() {
   mkdir -p "$LOG_DIR"
-  touch "$DONE_LOG" "$PENDING_LOG" "$MONITOR_LOG"
+  touch "$DONE_LOG" "$PENDING_LOG" "$LOG_FILE"
 }
 
-# ---------- запись в лог ----------
-_log() {
-  local level="$1"; shift
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $*" >> "$MONITOR_LOG"
-}
-
-# ---------- уже обработана? ----------
 _is_done() {
-  local ip="$1"
-  grep -q "^$ip," "$DONE_LOG" 2>/dev/null
+  grep -q "^$1," "$DONE_LOG" 2>/dev/null
 }
 
-# ---------- применить фикс ----------
-_apply_fix() {
-  local ip="$1" password="$2"
-
-  if [[ "$HAS_SSHPASS" == "true" ]]; then
-    result=$(sshpass -p "$password" ssh \
-      -o StrictHostKeyChecking=no \
-      -o ConnectTimeout="$SSH_TIMEOUT" \
-      -o BatchMode=no \
-      -o LogLevel=ERROR \
-      "${ADMIN_USER}@${ip}" \
-      "echo '$password' | sudo -S bash -c '$REMOTE_CMD'" 2>/dev/null)
-  else
-    result=$(ssh \
-      -o StrictHostKeyChecking=no \
-      -o ConnectTimeout="$SSH_TIMEOUT" \
-      -o BatchMode=no \
-      -o LogLevel=ERROR \
-      "${ADMIN_USER}@${ip}" \
-      "sudo bash -c '$REMOTE_CMD'" 2>/dev/null)
-  fi
-
-  echo "$result"
-}
-
-# ---------- --status: показать текущее состояние ----------
+# ---------- --status ----------
 _status() {
   _init
-
   echo ""
   echo -e "  ${BOLD}${CYAN}Статус устранения algif_aead${RESET}"
   echo ""
 
-  # Обработанные машины
   local done_count=0
   if [[ -s "$DONE_LOG" ]]; then
     echo -e "  ${GREEN}${BOLD}✓ Обработано:${RESET}"
@@ -100,15 +58,12 @@ _status() {
   else
     echo -e "  ${GREEN}✓ Обработано:${RESET} нет записей"
   fi
-
   echo ""
 
-  # Ожидающие машины
   local pending_count=0
   if [[ -s "$PENDING_LOG" ]]; then
     echo -e "  ${YELLOW}${BOLD}⏳ Ожидают обработки:${RESET}"
     while IFS=',' read -r ip employee; do
-      # Проверяем онлайн ли сейчас
       if ping -c 1 -W 1 "$ip" &>/dev/null; then
         printf "  ${YELLOW}⏳${RESET}  %-20s %-25s ${GREEN}(онлайн сейчас!)${RESET}\n" "$ip" "$employee"
       else
@@ -126,7 +81,6 @@ _status() {
   echo -e "  ${YELLOW}Pending:${RESET} $pending_count"
   echo ""
 
-  # Статус монитора
   if [[ -f "$PID_FILE" ]]; then
     local pid
     pid=$(cat "$PID_FILE")
@@ -145,36 +99,32 @@ _status() {
   echo ""
 }
 
-# ---------- основной цикл мониторинга ----------
+# ---------- основной цикл ----------
 _monitor_loop() {
-  local csv_data="$1"
+  local tsv_data="$1"
 
-  _log "INFO" "Мониторинг запущен (PID $$, интервал ${PING_INTERVAL}с)"
+  log INFO "Мониторинг запущен (PID $$, интервал ${PING_INTERVAL}с)"
   echo $$ > "$PID_FILE"
 
-  # Заполняем pending.log машинами которые ещё не обработаны
-  while IFS=',' read -r employee ip password; do
+  # Заполняем pending.log машинами которые ещё не обработаны (только тип pc)
+  while IFS=$'\t' read -r employee ip password type; do
     [[ "$employee" == "employee" ]] && continue
-    [[ -z "$ip" ]] && continue
-    employee=$(echo "$employee" | xargs)
-    ip=$(echo "$ip" | xargs)
+    [[ -z "$ip" || "$ip" == "-" ]] && continue
+    [[ "$type" != "pc" ]] && continue
 
     if ! _is_done "$ip"; then
-      # Добавляем в pending если ещё нет
       if ! grep -q "^$ip," "$PENDING_LOG" 2>/dev/null; then
         echo "${ip},${employee}" >> "$PENDING_LOG"
-        _log "INFO" "Добавлен в очередь: $employee ($ip)"
+        log INFO "Добавлен в очередь: $employee ($ip)"
       fi
     fi
-  done <<< "$(echo "$csv_data" | grep -v '^\s*$')"
+  done <<< "$(echo "$tsv_data" | grep -v '^\s*$')"
 
   local pending_count
   pending_count=$(grep -c '.' "$PENDING_LOG" 2>/dev/null || echo 0)
-  _log "INFO" "Машин в очереди: $pending_count"
+  log INFO "Машин в очереди: $pending_count"
 
-  # Основной цикл
   while true; do
-    # Перечитываем pending каждую итерацию
     local remaining=()
     while IFS=',' read -r ip employee; do
       [[ -z "$ip" ]] && continue
@@ -182,7 +132,7 @@ _monitor_loop() {
     done < "$PENDING_LOG"
 
     if [[ ${#remaining[@]} -eq 0 ]]; then
-      _log "INFO" "Все машины обработаны! Мониторинг завершён."
+      log INFO "Все машины обработаны! Мониторинг завершён."
       rm -f "$PID_FILE" "$PENDING_LOG"
       echo -e "\n  ${GREEN}✓ Все машины обработаны! Мониторинг завершён.${RESET}\n"
       exit 0
@@ -193,32 +143,28 @@ _monitor_loop() {
       ip=$(echo "$entry" | cut -d',' -f1)
       employee=$(echo "$entry" | cut -d',' -f2)
 
-      # Берём пароль из CSV
-      password=$(echo "$csv_data" | awk -F',' -v i="$ip" '$2==i{print $3; exit}' | xargs)
+      # Берём пароль из TSV-базы (3-я колонка)
+      password=$(echo "$tsv_data" | awk -F'\t' -v i="$ip" '$2==i{print $3; exit}')
 
-      # Пингуем
       if ! ping -c 1 -W 1 "$ip" &>/dev/null; then
-        continue  # офлайн — пропускаем до следующей итерации
+        continue
       fi
 
-      _log "INFO" "Машина онлайн: $employee ($ip) — применяем фикс..."
+      log INFO "Машина онлайн: $employee ($ip) — применяем фикс..."
       echo -e "  ${CYAN}→ Онлайн:${RESET} ${BOLD}$employee${RESET} ($ip) — применяем фикс..."
 
-      result=$(_apply_fix "$ip" "$password")
+      result=$(ssh_run "$ip" "$password" <<< "$REMOTE_CMD")
 
       if [[ "$result" == "OK" ]]; then
         local ts
         ts=$(date '+%Y-%m-%d %H:%M:%S')
-        # Добавляем в done.log
         echo "${ip},${employee},${ts}" >> "$DONE_LOG"
-        # Удаляем из pending.log
         grep -v "^${ip}," "$PENDING_LOG" > "${PENDING_LOG}.tmp" && \
           mv "${PENDING_LOG}.tmp" "$PENDING_LOG"
-
-        _log "OK" "$employee ($ip) — успешно"
+        log OK "$employee ($ip) — успешно"
         echo -e "  ${GREEN}✓ Готово:${RESET} ${BOLD}$employee${RESET} ($ip)"
       else
-        _log "WARN" "$employee ($ip) — ошибка: $result"
+        log WARN "$employee ($ip) — ошибка: $result"
         echo -e "  ${RED}✗ Ошибка:${RESET} $employee ($ip): $result"
       fi
     done
@@ -260,7 +206,6 @@ case "$1" in
     ;;
 esac
 
-# Проверяем не запущен ли уже
 if [[ -f "$PID_FILE" ]]; then
   pid=$(cat "$PID_FILE")
   if kill -0 "$pid" 2>/dev/null; then
@@ -270,29 +215,23 @@ if [[ -f "$PID_FILE" ]]; then
   fi
 fi
 
-# Расшифровываем базу
 if [[ ! -f "$PC_DB_ENC" ]]; then
   echo -e "${RED}База pc не найдена.${RESET}"
   exit 1
 fi
 
 echo -e "${CYAN}Расшифровываем базу pc...${RESET}"
-CSV_DATA=$(gpg --decrypt "$PC_DB_ENC" 2>/dev/null)
-if [[ $? -ne 0 ]] || [[ -z "$CSV_DATA" ]]; then
-  echo -e "${RED}Ошибка расшифровки.${RESET}"
-  exit 1
-fi
+TSV_DATA=$(gpg_decrypt) || exit 1
 
 echo ""
 echo -e "  ${BOLD}${CYAN}algif_monitor запущен${RESET}"
 echo -e "  Проверка каждые ${BOLD}${PING_INTERVAL}с${RESET}"
 echo -e "  Статус: ${BOLD}algif_monitor --status${RESET}"
 echo -e "  Стоп:   ${BOLD}algif_monitor --stop${RESET}"
-echo -e "  Лог:    ${BOLD}$MONITOR_LOG${RESET}"
+echo -e "  Лог:    ${BOLD}$LOG_FILE${RESET}"
 echo ""
 
-# Запускаем в фоне
-_monitor_loop "$CSV_DATA" &
+_monitor_loop "$TSV_DATA" &
 disown
 
 echo -e "  ${GREEN}● Мониторинг запущен в фоне (PID $!)${RESET}"

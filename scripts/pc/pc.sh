@@ -10,14 +10,9 @@
 #    pc --encrypt  — зашифровать plain TSV (первый раз)
 # ============================================================
 
-PC_DB_ENC="${HOME}/.config/pc/computers.tsv.gpg"
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+
 PC_DB_PLAIN="${HOME}/.config/pc/computers.tsv"
-
-# Логин локального админа
-ADMIN_USER="administrator"
-
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
 
 # ---------- проверка зависимостей ----------
 if ! command -v fzf &>/dev/null; then
@@ -25,44 +20,7 @@ if ! command -v fzf &>/dev/null; then
   echo "  Скопируй бинарник fzf в /usr/local/bin/ и chmod +x"
   exit 1
 fi
-
-if ! command -v gpg &>/dev/null; then
-  echo -e "${RED}Ошибка:${RESET} gpg не установлен."
-  echo "  sudo apt install gnupg"
-  exit 1
-fi
-
-# ---------- копирование в буфер ----------
-_copy() {
-  if command -v xclip &>/dev/null; then
-    echo -n "$1" | xclip -selection clipboard
-  elif command -v xsel &>/dev/null; then
-    echo -n "$1" | xsel --clipboard --input
-  else
-    echo -e "${YELLOW}Буфер недоступен.${RESET} Пароль: ${BOLD}$1${RESET}"
-    return
-  fi
-  echo -e "${GREEN}✓ Скопировано в буфер обмена${RESET}"
-}
-
-# ---------- настройка gpg-agent ----------
-_setup_gpg_agent() {
-  local conf="${HOME}/.gnupg/gpg-agent.conf"
-  mkdir -p "${HOME}/.gnupg"
-  chmod 700 "${HOME}/.gnupg"
-
-  if ! grep -q "default-cache-ttl" "$conf" 2>/dev/null; then
-    echo "default-cache-ttl 0" >> "$conf"
-    echo "max-cache-ttl 0" >> "$conf"
-    gpg-connect-agent reloadagent /bye &>/dev/null
-  fi
-
-  if ! grep -q "allow-loopback-pinentry" "$conf" 2>/dev/null; then
-    echo "allow-loopback-pinentry" >> "$conf"
-  fi
-
-  gpg-connect-agent reloadagent /bye &>/dev/null
-}
+check_dep gpg
 
 # ---------- первый запуск ----------
 _first_run() {
@@ -153,7 +111,7 @@ _edit() {
 }
 
 # ---------- обработка аргументов ----------
-_setup_gpg_agent
+setup_gpg_agent
 
 case "$1" in
   --encrypt)
@@ -181,14 +139,7 @@ if [[ ! -f "$PC_DB_ENC" ]]; then
 fi
 
 # ---------- расшифровываем в память ----------
-TSV_DATA=$(gpg --decrypt \
-               --pinentry-mode loopback \
-               "$PC_DB_ENC" 2>/dev/null)
-
-if [[ $? -ne 0 ]] || [[ -z "$TSV_DATA" ]]; then
-  echo -e "${RED}Ошибка расшифровки. Неверный мастер-пароль?${RESET}"
-  exit 1
-fi
+TSV_DATA=$(gpg_decrypt) || exit 1
 
 # ---------- выбор категории ----------
 CATEGORY=$(printf "▷  Сотрудники\n▷  Принтеры\n▷  BIOS\n▷  Notebook\n▷  Все" \

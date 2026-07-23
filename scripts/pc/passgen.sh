@@ -10,41 +10,15 @@
 #    passgen --edit     — открыть базу для ручной правки
 # ============================================================
 
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/common.sh"
+
 DB_ENC="${HOME}/.config/pc/passwords.csv.gpg"
 DB_PLAIN="${HOME}/.config/pc/passwords.csv"
 CHANGE_DAYS=40
-WARN_DAYS=7   # предупреждать за 7 дней до смены
-
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
-CYAN='\033[0;36m'; BOLD='\033[1m'; RESET='\033[0m'
+WARN_DAYS=7
 
 # ---------- зависимости ----------
-for cmd in fzf gpg openssl; do
-  if ! command -v "$cmd" &>/dev/null; then
-    echo -e "${RED}Ошибка:${RESET} $cmd не установлен."
-    exit 1
-  fi
-done
-
-# ---------- gpg-agent без кэша ----------
-_setup_gpg_agent() {
-  local conf="${HOME}/.gnupg/gpg-agent.conf"
-  mkdir -p "${HOME}/.gnupg" && chmod 700 "${HOME}/.gnupg"
-  if ! grep -q "default-cache-ttl" "$conf" 2>/dev/null; then
-    echo "default-cache-ttl 0" >> "$conf"
-    echo "max-cache-ttl 0" >> "$conf"
-    gpg-connect-agent reloadagent /bye &>/dev/null
-  fi
-}
-
-# ---------- копирование в буфер ----------
-_copy() {
-  if command -v xclip &>/dev/null; then
-    echo -n "$1" | xclip -selection clipboard
-  elif command -v xsel &>/dev/null; then
-    echo -n "$1" | xsel --clipboard --input
-  fi
-}
+for cmd in fzf gpg openssl; do check_dep "$cmd"; done
 
 # ---------- генерация пароля ----------
 # Гарантирует: минимум 1 заглавная, 1 строчная, 1 цифра, 1 спецсимвол, итого 15 символов
@@ -155,7 +129,6 @@ _new() {
   echo -e "  └─────────────────────────────────────┘"
   echo ""
   _copy "$password"
-  echo -e "  ${GREEN}✓ Пароль скопирован в буфер${RESET}"
   echo ""
   echo -e "  ${YELLOW}Сотрудник записывает пароль...${RESET}"
   echo -ne "  Нажми Enter когда готово: "
@@ -222,7 +195,6 @@ _show() {
   echo ""
 
   _copy "$password"
-  echo -e "  ${GREEN}✓ Пароль скопирован в буфер${RESET}"
   echo ""
 }
 
@@ -291,7 +263,7 @@ _edit() {
 }
 
 # ---------- точка входа ----------
-_setup_gpg_agent
+setup_gpg_agent
 
 if [[ ! -f "$DB_ENC" ]]; then
   _first_run

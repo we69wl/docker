@@ -153,5 +153,5 @@ if [ ${#CLOSED_LIST[@]} -gt 0 ]; then
 fi
 
 echo ""
-chown vlaysavin:vlaysavin "$REPORT"
+chown "${SUDO_USER:-$USER}:${SUDO_USER:-$USER}" "$REPORT" 2>/dev/null || true
 echo "Отчёт сохранён: $REPORT"
