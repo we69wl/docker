@@ -31,6 +31,16 @@ services:
     networks:
       - app-network
 
+  php85:
+    build: ./php/php8.5
+    container_name: php85-fpm
+    restart: unless-stopped
+    volumes:
+      - ./nginx/www:/var/www
+      - ./logs/php85:/var/log/php85
+    networks:
+      - app-network
+
   mysql:
     image: mysql:8.0
     container_name: mysql-db
