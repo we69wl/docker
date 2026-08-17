@@ -38,6 +38,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./nginx/www:/var/www
+      - ./php/php8.5/local.ini:/usr/local/etc/conf.d/php.ini
       - ./logs/php85:/var/log/php85
     networks:
       - app-network
