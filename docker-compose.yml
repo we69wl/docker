@@ -18,6 +18,7 @@ services:
       - app-network
     depends_on:
       - php
+      - php85
       - python
       - node-qzz
 
@@ -100,6 +101,10 @@ services:
   markitdown:
     build: ./services/markitdown
     image: markitdown:latest
+    container_name: markitdown-service
+    restart: unless-stopped
+    networks:
+      - app-network # Добавлена сеть
 
 networks:
   app-network:
