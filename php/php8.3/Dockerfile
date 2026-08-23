@@ -1,6 +1,6 @@
 FROM php:8.3-fpm
 
-# Установка необходимых системных библиотек
+# Установка системных зависимостей
 RUN apt-get update && apt-get install -y \
     git \
     unzip \
@@ -11,10 +11,9 @@ RUN apt-get update && apt-get install -y \
     libonig-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Подтягиваем скрипт установки расширений
+# Скрипт установки встроенных расширений PHP
 COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 
-# Установка расширений PHP
 RUN install-php-extensions \
     pdo \
     pdo_mysql \
@@ -25,8 +24,10 @@ RUN install-php-extensions \
     pcntl \
     gd \
     zip \
-    opcache \
-    redis
+    opcache
+
+# Установка и включение Redis через PECL
+RUN pecl install redis && docker-php-ext-enable redis
 
 # Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
