@@ -30,6 +30,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./nginx/www:/var/www
+      - ./php/php8.3/custom.ini:/usr/local/etc/php/conf.d/custom.ini:ro
     environment:
       - PHP_MEMORY_LIMIT=512M
       - PHP_DISPLAY_ERRORS=Off
