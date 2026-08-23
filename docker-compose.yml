@@ -32,6 +32,8 @@ services:
       - ./nginx/www:/var/www
     environment:
       - PHP_MEMORY_LIMIT=256M
+    networks:
+      - app-network
 
   mysql:
     image: mysql:8.0
