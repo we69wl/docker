@@ -31,7 +31,8 @@ services:
     volumes:
       - ./nginx/www:/var/www
     environment:
-      - PHP_MEMORY_LIMIT=256M
+      - PHP_MEMORY_LIMIT=512M
+      - PHP_DISPLAY_ERRORS=Off
     networks:
       - app-network
 
