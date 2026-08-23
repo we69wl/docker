@@ -1,0 +1,46 @@
+server {
+    listen 80;
+    server_name example.com www.example.com;
+
+    # Путь к корню сайта внутри контейнера Nginx
+    root /var/www/example.com;
+    index index.php index.html;
+
+    # Максимальный размер загружаемых файлов (для админки WP)
+    client_max_body_size 64M;
+
+    # Логирование
+    access_log /var/log/nginx/example_access.log;
+    error_log /var/log/nginx/example_error.log;
+
+    # ЧПУ WordPress
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    # Обработка PHP-скриптов через контейнер php-fpm
+    location ~ \.php$ {
+        try_files $uri =404;
+        fastcgi_split_path_info ^(.+\.php)(/.+)$;
+
+        # 'php' — имя сервиса PHP из вашего docker-compose.yml
+        fastcgi_pass php:9000;
+
+        fastcgi_index index.php;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param PATH_INFO $fastcgi_path_info;
+    }
+
+    # Статические файлы и кэширование
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|eot|woff|woff2|ttf)$ {
+        expires max;
+        log_not_found off;
+        access_log off;
+    }
+
+    # Запрет доступа к скрытым файлам (.htaccess, .git и т.д.)
+    location ~ /\.ht {
+        deny all;
+    }
+}
