@@ -1,13 +1,20 @@
 FROM php:8.3-fpm
 
-# Установка системных зависимостей
-RUN apt-get update && apt-get install -y git unzip \
+# Установка необходимых системных библиотек
+RUN apt-get update && apt-get install -y \
+    git \
+    unzip \
+    libfreetype6-dev \
+    libjpeg62-turbo-dev \
+    libpng-dev \
+    libzip-dev \
+    libonig-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Утилита для удобной установки PHP-расширений
+# Подтягиваем скрипт установки расширений
 COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 
-# Установка необходимых расширений для WordPress / Laravel
+# Установка расширений PHP
 RUN install-php-extensions \
     pdo \
     pdo_mysql \
@@ -24,7 +31,6 @@ RUN install-php-extensions \
 # Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Рабочая директория внутри контейнера
 WORKDIR /var/www
 
 CMD ["php-fpm"]
