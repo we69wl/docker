@@ -36,3 +36,13 @@ Thumbs.db
 
 # Docker
 docker-compose.override.yml
+
+# Ненеиспользуемые сервисы в сборке
+python/
+node/
+postgres/
+rabbitmq/
+redis/
+services/
+scripts/
+EOT
