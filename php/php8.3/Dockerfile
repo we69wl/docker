@@ -26,8 +26,9 @@ RUN install-php-extensions \
     zip \
     opcache
 
-# Установка и включение Redis через PECL
-RUN pecl install redis && docker-php-ext-enable redis
+# Сборка phpredis напрямую из исходников GitHub в обход PECL
+RUN git clone https://github.com/phpredis/phpredis.git /usr/src/php/ext/redis \
+    && docker-php-ext-install redis
 
 # Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
