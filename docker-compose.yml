@@ -23,14 +23,15 @@ services:
       - mysql
 
   php:
-    build: ./php
+    build:
+      context: ./php/php8.3
+      dockerfile: Dockerfile
     container_name: php-fpm
     restart: unless-stopped
     volumes:
       - ./nginx/www:/var/www
-      - ./logs/php:/var/log/php
-    networks:
-      - app-network
+    environment:
+      - PHP_MEMORY_LIMIT=256M
 
   mysql:
     image: mysql:8.0
