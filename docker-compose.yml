@@ -20,7 +20,7 @@ services:
       - php
       - php85
       - python
-      - node-qzz
+      # - node-qzz
 
   php:
     build: ./php
