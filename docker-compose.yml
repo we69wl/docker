@@ -98,13 +98,13 @@ services:
     networks:
       - app-network   # ← добавить сеть
 
-  markitdown:
-    build: ./services/markitdown
-    image: markitdown:latest
-    container_name: markitdown-service
-    restart: unless-stopped
-    networks:
-      - app-network # Добавлена сеть
+  # markitdown:
+  #   build: ./services/markitdown
+  #   image: markitdown:latest
+  #   container_name: markitdown-service
+  #   restart: unless-stopped
+  #   networks:
+  #     - app-network # Добавлена сеть
 
 networks:
   app-network:
