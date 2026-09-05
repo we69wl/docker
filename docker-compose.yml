@@ -58,19 +58,19 @@ services:
     networks:
       - app-network
 
-  node-qzz:
-    build:
-      context: .
-      dockerfile: node/Dockerfile
-    container_name: node-qzz
-    restart: unless-stopped
-    env_file:
-      - ./nginx/www/qzzdeals/backend/.env
-    networks:
-      - app-network
-    depends_on:
-      mysql:
-        condition: service_healthy
+  # node-qzz:
+  #   build:
+  #     context: .
+  #     dockerfile: node/Dockerfile
+  #   container_name: node-qzz
+  #   restart: unless-stopped
+  #   env_file:
+  #     - ./nginx/www/qzzdeals/backend/.env
+  #   networks:
+  #     - app-network
+  #   depends_on:
+  #     mysql:
+  #       condition: service_healthy
 
   python:
     build: ./python
