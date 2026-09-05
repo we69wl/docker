@@ -19,7 +19,7 @@ services:
     depends_on:
       - php
       - php85
-      - python
+      # - python
       # - node-qzz
 
   php:
@@ -72,22 +72,22 @@ services:
   #     mysql:
   #       condition: service_healthy
 
-  python:
-    build: ./python
-    container_name: sheets-backend
-    restart: unless-stopped
-    env_file:
-      - ./python/.env
-    volumes:
-      - ./python/credentials.json:/app/credentials.json:ro
-      - ./logs/python:/app/logs
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - app-network
+  # python:
+  #   build: ./python
+  #   container_name: sheets-backend
+  #   restart: unless-stopped
+  #   env_file:
+  #     - ./python/.env
+  #   volumes:
+  #     - ./python/credentials.json:/app/credentials.json:ro
+  #     - ./logs/python:/app/logs
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #   networks:
+  #     - app-network
 
   certbot:
     image: certbot/certbot
