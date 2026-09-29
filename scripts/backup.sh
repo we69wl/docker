@@ -58,6 +58,14 @@ if [ -f "$SOURCE_DIR/docker-compose.yml" ]; then
     echo "✓ docker-compose.yml backed up" >> $LOG_FILE
 fi
 
+# 5a. Бэкап Xray (содержит приватный ключ, доступ только владельцу)
+XRAY_DIR="/home/webowl/xray"
+if [ -f "$XRAY_DIR/xray/config.json" ]; then
+    (umask 077; tar -czf "$BACKUP_ROOT/configs/xray_$DATE.tar.gz" \
+        -C /home/webowl xray/xray/config.json xray/docker-compose.yml 2>/dev/null)
+    echo "✓ Xray config backed up" >> $LOG_FILE
+fi
+
 # 6. Очистка старых бэкапов (старше 30 дней)
 find "$BACKUP_ROOT/mysql" -name "*.sql.gz" -mtime +30 -delete 2>/dev/null
 find "$BACKUP_ROOT/certbot" -name "*.tar.gz" -mtime +30 -delete 2>/dev/null
