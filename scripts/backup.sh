@@ -7,6 +7,11 @@ SOURCE_DIR="/home/webowl/docker"
 DATE=$(date +%Y%m%d_%H%M)
 LOG_FILE="/home/webowl/docker/logs/backup.log"
 
+if ! [ -d /mnt/toshiba/docker ]; then
+    echo "✗ $(date): диск бэкапов недоступен" >> $LOG_FILE
+    exit 1
+fi
+
 # Убедимся, что папка существует
 mkdir -p "$BACKUP_ROOT"/{mysql,certbot,env,configs}
 
