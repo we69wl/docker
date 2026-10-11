@@ -71,6 +71,14 @@ if [ -f "$XRAY_DIR/xray/config.json" ]; then
     echo "✓ Xray config backed up" >> $LOG_FILE
 fi
 
+# 5b. Laravel nail_booking: .env и загруженные файлы
+APP_DIR="$SOURCE_DIR/nginx/www/nail_booking"
+if [ -f "$APP_DIR/.env" ]; then
+    (umask 077; tar --ignore-failed-read -czf "$BACKUP_ROOT/configs/nail_booking_$DATE.tar.gz" \
+        -C "$APP_DIR" .env storage/app/public 2>/dev/null)
+    echo "✓ nail_booking .env and uploads backed up" >> $LOG_FILE
+fi
+
 # 6. Очистка старых бэкапов (старше 30 дней)
 find "$BACKUP_ROOT/mysql" -name "*.sql.gz" -mtime +30 -delete 2>/dev/null
 find "$BACKUP_ROOT/certbot" -name "*.tar.gz" -mtime +30 -delete 2>/dev/null
