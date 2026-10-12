@@ -79,6 +79,24 @@ if [ -f "$APP_DIR/.env" ]; then
     echo "✓ nail_booking .env and uploads backed up" >> $LOG_FILE
 fi
 
+# 5c. Marzban: конфиги и база (секреты, доступ только владельцу)
+MZ_DIR="/home/webowl/marzban"
+if [ -f "$MZ_DIR/xray_config.json" ]; then
+    (umask 077
+     tar -czf "$BACKUP_ROOT/configs/marzban_$DATE.tar.gz" \
+         -C /home/webowl marzban/.env marzban/xray_config.json marzban/docker-compose.yml 2>/dev/null
+     if docker ps --format '{{.Names}}' | grep -q '^marzban$'; then
+         docker exec marzban python3 -c "import sqlite3; s=sqlite3.connect('/var/lib/marzban/db.sqlite3'); d=sqlite3.connect('/tmp/db_bak.sqlite3'); s.backup(d); d.close(); s.close()" 2>/dev/null \
+         && docker cp marzban:/tmp/db_bak.sqlite3 "$BACKUP_ROOT/configs/marzban_db_$DATE.sqlite3" >/dev/null 2>&1 \
+         && docker exec marzban rm -f /tmp/db_bak.sqlite3
+     fi)
+    if [ -s "$BACKUP_ROOT/configs/marzban_db_$DATE.sqlite3" ]; then
+        echo "✓ Marzban config and db backed up" >> $LOG_FILE
+    else
+        echo "⚠ Marzban config backed up, db NOT copied" >> $LOG_FILE
+    fi
+fi
+
 # 6. Очистка старых бэкапов (старше 30 дней)
 find "$BACKUP_ROOT/mysql" -name "*.sql.gz" -mtime +30 -delete 2>/dev/null
 find "$BACKUP_ROOT/certbot" -name "*.tar.gz" -mtime +30 -delete 2>/dev/null
