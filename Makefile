@@ -58,8 +58,10 @@ collect-licenses:
 pswd:
 	@bash scripts/pass/generate.sh
 
+PSM ?= 3
+
 convert:
-	docker run --rm -i -e OCR_LANG=rus+eng markitdown:latest $(suffix $(FILE)) \
+	docker run --rm -i -e OCR_LANG=rus+eng -e OCR_PSM=$(PSM) markitdown:latest $(suffix $(FILE)) \
 		< "services/markitdown/input/$(FILE)" \
 		> "services/markitdown/output/$(basename $(FILE)).md"
 	@echo "Готово: services/markitdown/output/$(basename $(FILE)).md"
