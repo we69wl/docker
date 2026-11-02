@@ -59,5 +59,7 @@ pswd:
 	@bash scripts/pass/generate.sh
 
 convert:
-	docker run --rm -i markitdown:latest < "services/markitdown/input/$(FILE)" > "services/markitdown/output/$(basename $(FILE)).md"
+	docker run --rm -i -e OCR_LANG=rus+eng markitdown:latest $(suffix $(FILE)) \
+		< "services/markitdown/input/$(FILE)" \
+		> "services/markitdown/output/$(basename $(FILE)).md"
 	@echo "Готово: services/markitdown/output/$(basename $(FILE)).md"
