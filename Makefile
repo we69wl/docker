@@ -59,9 +59,10 @@ pswd:
 	@bash scripts/pass/generate.sh
 
 PSM ?= 3
+BIN ?= 0
 
 convert:
-	docker run --rm -i -e OCR_LANG=rus+eng -e OCR_PSM=$(PSM) markitdown:latest $(suffix $(FILE)) \
+	docker run --rm -i -e OCR_LANG=rus+eng -e OCR_PSM=$(PSM) -e OCR_BINARIZE=$(BIN) markitdown:latest $(suffix $(FILE)) \
 		< "services/markitdown/input/$(FILE)" \
 		> "services/markitdown/output/$(basename $(FILE)).md"
 	@echo "Готово: services/markitdown/output/$(basename $(FILE)).md"
