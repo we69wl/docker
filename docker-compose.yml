@@ -130,3 +130,5 @@ networks:
 volumes:
   nginx-cache:
   open-webui-data:
+  docker_open-webui-data:
+    external: true
