@@ -112,6 +112,7 @@ services:
     container_name: open-webui
     restart: always
     environment:
+      - WEBUI_SECRET_KEY=879661c0785e88aaa57b0ecffc814fa63de114ff3ebdaf4a8a8c72027fe6fe77
       - OLLAMA_BASE_URL=http://192.168.0.23:11434
       - WEBUI_URL=https://chat.savin-it.ru
       - CORS_ALLOW_ORIGIN=https://chat.savin-it.ru
