@@ -119,7 +119,7 @@ services:
       # - HF_ENDPOINT=https://hf-mirror.com
     volumes:
       - open-webui-data:/app/backend/data
-       - ./services/markitdown/output:/app/backend/data/markitdown_output
+      - ./services/markitdown/output:/app/backend/data/markitdown_output
     networks:
       - app-network
 
