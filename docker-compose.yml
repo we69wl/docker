@@ -114,6 +114,7 @@ services:
     environment:
       - OLLAMA_BASE_URL=http://192.168.0.23:11434
       - WEBUI_URL=https://chat.savin-it.ru
+      - CORS_ALLOW_ORIGIN=https://chat.savin-it.ru
       # Опционально: для использования зеркала HuggingFace (если загрузка моделей медленная)
       # - HF_ENDPOINT=https://hf-mirror.com
     volumes:
