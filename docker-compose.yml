@@ -124,6 +124,23 @@ services:
     networks:
       - app-network
 
+  oikb:
+    image: ghcr.io/open-webui/oikb:latest
+    container_name: oikb-sync
+    restart: unless-stopped
+    command: daemon
+    volumes:
+      - ./services/oikb/.oikb.yaml:/app/.oikb.yaml:ro
+      - ./services/markitdown/output:/data:ro  # Монтируем папку с файлами
+    environment:
+      - OPEN_WEBUI_URL=http://open-webui:8080
+      - OPEN_WEBUI_API_KEY=sk-115a3c80cc33472c826201d17474e51b
+      - OIKB_API_KEY=2a3e2381133c16e2fdf2f3858a71930af9d581eddddd74dbcb9c4b9ce1cdd5bc # Придумайте любой
+    networks:
+      - app-network
+    depends_on:
+      - open-webui
+
 networks:
   app-network:
     driver: bridge
