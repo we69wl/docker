@@ -112,7 +112,7 @@ services:
     container_name: open-webui
     restart: always
     environment:
-      - WEBUI_SECRET_KEY=879661c0785e88aaa57b0ecffc814fa63de114ff3ebdaf4a8a8c72027fe6fe77
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY:?Set WEBUI_SECRET_KEY in .env}
       - OLLAMA_BASE_URL=http://192.168.0.23:11434
       - WEBUI_URL=https://chat.savin-it.ru
       - CORS_ALLOW_ORIGIN=https://chat.savin-it.ru
@@ -134,8 +134,8 @@ services:
       - ./services/markitdown/output:/data:ro  # Монтируем папку с файлами
     environment:
       - OPEN_WEBUI_URL=http://open-webui:8080
-      - OPEN_WEBUI_API_KEY=sk-115a3c80cc33472c826201d17474e51b
-      - OIKB_API_KEY=2a3e2381133c16e2fdf2f3858a71930af9d581eddddd74dbcb9c4b9ce1cdd5bc # Придумайте любой
+      - OPEN_WEBUI_API_KEY=${OPEN_WEBUI_API_KEY:?Set OPEN_WEBUI_API_KEY in .env}
+      - OIKB_API_KEY=${OIKB_API_KEY:?Set OIKB_API_KEY in .env}
     networks:
       - app-network
     depends_on:
@@ -149,7 +149,7 @@ services:
       - ./services/searxng:/etc/searxng:rw
     environment:
       - SEARXNG_BASE_URL=http://searxng:8080/
-      - SEARXNG_SECRET_KEY=941530a06f1de5d72fec6e49f4e8da07b5203ce4bb3d826ca26fc50c09b7f743
+      - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:?Set SEARXNG_SECRET_KEY in .env}
     networks:
       - app-network
     depends_on:
