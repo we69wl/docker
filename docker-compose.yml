@@ -118,8 +118,19 @@ services:
       - CORS_ALLOW_ORIGIN=https://chat.savin-it.ru
       - RAG_EMBEDDING_ENGINE=ollama
       - RAG_EMBEDDING_MODEL=bge-m3:latest
-      # Опционально: для использования зеркала HuggingFace (если загрузка моделей медленная)
-      # - HF_ENDPOINT=https://hf-mirror.com
+      # Ограничиваем пул соединений SQLite (высвободит сотни мегабайт)
+      - DATABASE_POOL_SIZE=8
+      - DATABASE_SQLITE_PRAGMA_CACHE_SIZE=-2000
+      - DATABASE_SQLITE_PRAGMA_MMAP_SIZE=0
+      
+      # Отключаем фоновые генерации (они тоже жрут память)
+      - ENABLE_AUTOCOMPLETE_GENERATION=False
+      - ENABLE_TITLE_GENERATION=False
+      - ENABLE_TAGS_GENERATION=False
+      - ENABLE_FOLLOW_UP_GENERATION=False
+      
+      # Отключаем локальный Whisper
+      - AUDIO_STT_ENGINE=webapi
     volumes:
       - open-webui-data:/app/backend/data
       - ./services/markitdown/output:/app/backend/data/markitdown_output
