@@ -140,6 +140,28 @@ services:
       - app-network
     depends_on:
       - open-webui
+  
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    volumes:
+      - ./services/searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080/
+      - SEARXNG_SECRET_KEY=941530a06f1de5d72fec6e49f4e8da07b5203ce4bb3d826ca26fc50c09b7f743
+    networks:
+      - app-network
+    depends_on:
+      - redis
+
+  redis:
+    image: docker.io/valkey/valkey:7-alpine
+    container_name: searxng-redis
+    command: valkey-server --save 30 1 --loglevel warning
+    restart: unless-stopped
+    networks:
+      - app-network
 
 networks:
   app-network:
