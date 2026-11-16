@@ -116,6 +116,8 @@ services:
       - OLLAMA_BASE_URL=http://192.168.0.23:11434
       - WEBUI_URL=https://chat.savin-it.ru
       - CORS_ALLOW_ORIGIN=https://chat.savin-it.ru
+      - RAG_EMBEDDING_ENGINE=ollama
+      - RAG_EMBEDDING_MODEL=bge-m3:latest
       # Опционально: для использования зеркала HuggingFace (если загрузка моделей медленная)
       # - HF_ENDPOINT=https://hf-mirror.com
     volumes:
